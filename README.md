@@ -40,6 +40,10 @@ uv run --project . sam
 
 # real reasoning over local Ollama, CPU-forced
 SAM_LLM=ollama SAM_MODEL=qwen2.5:1.5b uv run --project . sam --once "set volume to 20"
+
+# full voice: live mic (Parakeet int8 CPU) → tool-loop → reply
+uv sync --extra voice
+SAM_STT=parakeet SAM_LLM=ollama uv run --project . sam
 ```
 
 ## Install (wire into the EVA router)
@@ -63,10 +67,15 @@ systemctl --user start sam.service
 | `SAM_LLM` | `stub` | reasoner: `stub` or `ollama` |
 | `SAM_MODEL` | `qwen2.5:1.5b` | Ollama model (keep it small) |
 | `SAM_OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama endpoint |
-| `SAM_STT` | `stub` | speech-in: `stub` (stdin) or `parakeet` (mic, opt-in) |
+| `SAM_STT` | `stub` | speech-in: `stub` (stdin) or `parakeet` (live mic) |
 | `SAM_TTS` | `stub` | speech-out: `stub` (stdout) or `piper` |
 | `SAM_CPU_ONLY` | `1` | forbid GPU layers in the reasoner |
 | `SAM_MAX_STEPS` | `4` | tool-loop ceiling |
+| `SAM_STT_MODEL_DIR` | Diana's `…/models/parakeet-tdt-0.6b-v2-onnx` | reuse the int8 model, no re-download |
+| `SAM_MIC_DEVICE` | `default` | ALSA capture device for `arecord` |
+| `SAM_VAD_RMS` | `0.012` | energy gate; raise it if a hot mic triggers on silence |
+| `SAM_VAD_SILENCE_MS` | `700` | trailing quiet that ends an utterance |
+| `SAM_VAD_MIN_MS` | `300` | ignore blips shorter than this |
 
 ## Tools
 
@@ -89,14 +98,22 @@ uv run --extra dev pytest -q   # smoke tests, stub mode, no models/network
 
 ## Status
 
-**v0.1.0 — scaffold.** The loop, tools, config, router wiring, and stub backends
-are real and tested. Not yet wired: live mic capture for `ParakeetSTT` (documented
-placeholder — raises `NotImplementedError`, not a silent stub). That's the first
-real-work task. See [`stt.py`](src/sam/backends/stt.py).
+**v0.1.0.** The loop, tools, config, router wiring, and stub backends are real
+and tested. **Voice is wired:** `ParakeetSTT` does live mic capture (`arecord`) +
+energy-VAD segmentation + Parakeet-TDT int8 CPU transcription, reusing Diana's
+pre-downloaded model. The full *spoken-audio → tool-loop → reply* path is verified
+end to end; the VAD state machine has its own deterministic tests (no mic needed).
+Remaining polish: Piper voice-out tuning, and live VAD-threshold calibration for
+your mic gain (`SAM_VAD_RMS`).
 
 ## Troubleshooting
 
 - **`volume` says no wpctl** — install `wireplumber` (PipeWire). SAM won't fake it.
 - **Ollama backend hangs / wakes GPU** — confirm `SAM_CPU_ONLY=1`; the request
   must carry `num_gpu: 0`. Check `ollama ps` shows 100% CPU.
-- **`ParakeetSTT not wired`** — expected. Use `SAM_STT=stub` until mic capture lands.
+- **Mic triggers constantly / never** — it's the energy gate vs your mic gain.
+  Raise/lower `SAM_VAD_RMS` (default `0.012`). A hot mic that reads high RMS on
+  silence needs a higher gate.
+- **`arecord: command not found`** — install `alsa-utils`. SAM captures through
+  it on purpose (no PortAudio/native dep); it's already on most desktops.
+- **Wrong mic** — set `SAM_MIC_DEVICE` (e.g. `plughw:0,0`); list with `arecord -l`.
