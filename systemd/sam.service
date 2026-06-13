@@ -10,9 +10,13 @@ Type=simple
 Environment=SAM_CPU_ONLY=1
 Environment=SAM_LLM=ollama
 Environment=SAM_MODEL=qwen2.5:1.5b
-Environment=SAM_STT=stub
+Environment=SAM_STT=parakeet
 Environment=SAM_TTS=stub
-ExecStart=%h/.local/bin/uv run --project %h/sam sam
+# VAD energy gate, calibrated to this mic at sane gain (ALSA Capture 40%/+1.5dB,
+# Mic Boost 0dB). At the old +50dB the mic railed and silence read full-scale —
+# no gate could work. Re-measure with scripts if the gain ever changes.
+Environment=SAM_VAD_RMS=0.06
+ExecStart=%h/.local/bin/uv run --project %h/sam --extra voice sam
 Restart=on-failure
 RestartSec=3
 # Be a good battery citizen: low priority, never starve the foreground.
