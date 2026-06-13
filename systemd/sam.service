@@ -1,0 +1,23 @@
+[Unit]
+Description=SAM — CPU-only battery agent (EVA member #3)
+Documentation=https://github.com/Thanukamax/sam
+# Promoted by eva-router when supergfx flips to Integrated (Sim mode).
+After=graphical-session.target
+
+[Service]
+Type=simple
+# Hard CPU-only contract, reinforced at the unit level.
+Environment=SAM_CPU_ONLY=1
+Environment=SAM_LLM=ollama
+Environment=SAM_MODEL=qwen2.5:1.5b
+Environment=SAM_STT=stub
+Environment=SAM_TTS=stub
+ExecStart=%h/.local/bin/uv run --project %h/sam sam
+Restart=on-failure
+RestartSec=3
+# Be a good battery citizen: low priority, never starve the foreground.
+Nice=10
+CPUWeight=20
+
+[Install]
+WantedBy=default.target
