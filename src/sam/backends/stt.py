@@ -5,10 +5,15 @@ ParakeetSTT adds the one thing Diana's socket server doesn't: live mic capture
 (via `arecord` — no PortAudio dep) with energy-based VAD segmentation. It reuses
 Diana's pre-downloaded int8 model dir so SAM never re-fetches 660MB.
 
+Because the capture gain is a shared, contested knob (Diana's orb cranks it,
+a cold boot rails it), ParakeetSTT pins the mic to its calibrated level before
+recording — otherwise the VAD gate it was tuned against is meaningless.
+
 Design split for testability (no mic needed in tests):
   transcribe_array(audio) — pure model call on a float32 mono 16k array
   _segment(frames)        — VAD state machine, frames in → utterance arrays out
-  listen()                — wires the live mic stream into the two above
+  _set_capture_gain()     — pin mixer to the calibrated level (best-effort)
+  listen()                — wires the live mic stream into the above
 """
 
 from __future__ import annotations
@@ -199,7 +204,40 @@ class ParakeetSTT:
             buf += chunk
         return buf
 
+    def _set_capture_gain(self) -> None:
+        """Pin the mic to SAM's calibrated level before recording.
+
+        The capture gain is a shared, *contested* knob: Diana's orb cranks it to
+        +30dB on every capture, and a cold boot restores +50dB — both rail this
+        laptop mic so 'silence' reads full-scale and the VAD fires nonstop. In Sim
+        mode nothing else manages it, so SAM sets its own sane level (mirrors
+        diana_orb.py's pactl pattern, just lower). Best-effort — a missing mixer
+        control must never stop capture. Disable with SAM_SET_GAIN=0.
+        """
+        if os.environ.get("SAM_SET_GAIN", "1") != "1":
+            return
+        import subprocess
+
+        card = os.environ.get("SAM_MIXER_CARD", "0")
+        capture = os.environ.get("SAM_CAPTURE_PCT", "40%")
+        boost = os.environ.get("SAM_MIC_BOOST", "0")
+        source = os.environ.get("SAM_PA_SOURCE", "@DEFAULT_SOURCE@")
+        for cmd in (
+            ["amixer", "-c", card, "sset", "Mic Boost", boost],
+            ["amixer", "-c", card, "sset", "Capture", capture],
+            ["pactl", "set-source-mute", source, "0"],  # don't capture a muted mic
+        ):
+            try:
+                subprocess.run(cmd, timeout=2, check=False,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception as e:  # noqa: BLE001 — best-effort, surfaced not swallowed
+                print(f"SAM stt: '{cmd[0]} {cmd[-2]}' skipped ({type(e).__name__})",
+                      file=sys.stderr, flush=True)
+        print(f"SAM stt: capture pinned (Capture={capture}, Mic Boost={boost}dB)",
+              file=sys.stderr, flush=True)
+
     def listen(self) -> Iterator[str]:
+        self._set_capture_gain()  # deterministic level → the VAD gate stays valid
         for utterance in self._segment(self._mic_frames()):
             text = self.transcribe_array(utterance)
             if text:

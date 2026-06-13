@@ -76,6 +76,10 @@ systemctl --user start sam.service
 | `SAM_VAD_RMS` | `0.012` | energy gate; raise it if a hot mic triggers on silence |
 | `SAM_VAD_SILENCE_MS` | `700` | trailing quiet that ends an utterance |
 | `SAM_VAD_MIN_MS` | `300` | ignore blips shorter than this |
+| `SAM_SET_GAIN` | `1` | pin mic gain before capture (set `0` to leave the mixer alone) |
+| `SAM_CAPTURE_PCT` | `40%` | ALSA Capture level SAM pins to (matches the VAD calibration) |
+| `SAM_MIC_BOOST` | `0` | ALSA Mic Boost dB SAM pins to |
+| `SAM_MIXER_CARD` | `0` | ALSA card index for the mixer controls |
 
 ## Tools
 
@@ -112,8 +116,11 @@ your mic gain (`SAM_VAD_RMS`).
 - **Ollama backend hangs / wakes GPU** — confirm `SAM_CPU_ONLY=1`; the request
   must carry `num_gpu: 0`. Check `ollama ps` shows 100% CPU.
 - **Mic triggers constantly / never** — it's the energy gate vs your mic gain.
-  Raise/lower `SAM_VAD_RMS` (default `0.012`). A hot mic that reads high RMS on
-  silence needs a higher gate.
+  SAM pins the gain before capture (`SAM_CAPTURE_PCT`, default `40%`) so the gate
+  stays valid; if it still mis-fires, recalibrate with `scripts/calibrate_vad.sh`
+  and adjust `SAM_VAD_RMS`. On a shared mic, another app (e.g. a voice assistant)
+  may re-crank the gain — SAM re-pins on each `listen()`, but set `SAM_SET_GAIN=0`
+  if you'd rather manage the mixer yourself.
 - **`arecord: command not found`** — install `alsa-utils`. SAM captures through
   it on purpose (no PortAudio/native dep); it's already on most desktops.
 - **Wrong mic** — set `SAM_MIC_DEVICE` (e.g. `plughw:0,0`); list with `arecord -l`.
