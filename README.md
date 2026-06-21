@@ -16,6 +16,15 @@ parked anyway. So [`eva-router`](https://github.com/Thanukamax/eva-router) hands
 off: heavy Diana steps down, **SAM** takes over. No orb, no GPU models — a tiny
 reasoner, a tight tool set, a fast wake.
 
+## Status
+
+**Early — functional scaffold (v0.1).** The agent loop runs end-to-end in stub
+mode (no models/network) with a working tool set, install scripts, and smoke
+tests. What's still ahead: live `eva-router` handoff on GPU power-state changes,
+the Ollama reasoner path proven on-device, and the optional voice extras
+(Parakeet in / Piper out) wired into the daemon. Treat the tool list and config
+table below as the stable surface; the integration story is in progress.
+
 ## Design contract
 
 - **CPU-only, enforced.** The Ollama backend sends `num_gpu: 0`. No VRAM, no dGPU
